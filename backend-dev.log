@@ -3,3 +3,7 @@
 > node --watch src/server.js
 
 CyberLab API listening on http://localhost:4000
+Restarting 'src/server.js'
+CyberLab API listening on http://localhost:4000
+Restarting 'src/server.js'
+CyberLab API listening on http://localhost:4000

@@ -5,6 +5,7 @@ const cors = require("cors");
 const session = require("express-session");
 const db = require("./db");
 const SQLiteSessionStore = require("./sessionStore");
+const { logRequest, writeLog } = require("./logger");
 const {
   bcrypt,
   normalizeEmail,
@@ -27,6 +28,7 @@ if (production) app.set("trust proxy", 1);
 
 app.disable("x-powered-by");
 app.use(cors({ origin: frontendOrigin, credentials: true }));
+app.use(logRequest);
 app.use(express.json({ limit: "10kb" }));
 app.use(session({
   name: "cyberlab.sid",
@@ -48,6 +50,19 @@ const insertUser = db.prepare("INSERT INTO users (username, email, password_hash
 const findDuplicate = db.prepare("SELECT username, email FROM users WHERE username = ? OR email = ?");
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+
+app.post("/api/client-logs", (req, res) => {
+  const allowedEvents = new Set(["page_view", "ui_click", "javascript_error", "unhandled_rejection", "react_error"]);
+  const { event, path: pagePath, message, source } = req.body || {};
+  if (!allowedEvents.has(event)) return res.status(400).json({ error: "Unsupported log event." });
+
+  const details = {};
+  if (typeof pagePath === "string") details.page = pagePath.slice(0, 200);
+  if (typeof message === "string") details.message = message.slice(0, 1000);
+  if (typeof source === "string") details.source = source.slice(0, 200);
+  writeLog(event.endsWith("error") || event === "unhandled_rejection" ? "error" : "info", event, details);
+  return res.status(204).end();
+});
 
 app.post("/api/auth/signup", async (req, res, next) => {
   try {
@@ -119,6 +134,12 @@ app.post("/api/auth/logout", requireAuth, (req, res, next) => {
 });
 
 app.use((error, req, res, next) => {
+  writeLog("error", "server_error", {
+    method: req.method,
+    path: req.path,
+    message: error.message,
+    stack: error.stack,
+  });
   console.error(error);
   if (res.headersSent) return next(error);
   if (error.type === "entity.parse.failed") {
@@ -128,5 +149,6 @@ app.use((error, req, res, next) => {
 });
 
 app.listen(port, () => {
+  writeLog("info", "server_started", { port, environment: production ? "production" : "development" });
   console.log(`CyberLab API listening on http://localhost:${port}`);
 });
